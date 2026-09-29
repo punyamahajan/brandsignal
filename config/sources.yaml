@@ -1,0 +1,87 @@
+version: "1.0"
+project: "BrandSignal"
+category: "D2C Footwear"
+geography: "IN"
+currency: "INR"
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  duckdb_path: "data/processed/brandsignal.duckdb"
+  parquet_dir: "data/processed/parquet"
+  logs_dir: "data/raw/logs"
+
+http_defaults:
+  user_agent: "BrandSignalValidator/1.0 (academic/competitive analysis research; contact@brandsignal.dev)"
+  timeout_seconds: 15
+  politeness_delay_seconds: 2.0
+  max_retries: 3
+  backoff_factor: 2.0
+
+brands:
+  neemans:
+    brand_id: "neemans"
+    name: "Neeman's"
+    domain: "neemans.com"
+    source_type: "shopify_storefront"
+    endpoint: "https://neemans.com/products.json"
+    batch_size: 250
+    is_active: true
+    expected_currency: "INR"
+
+  baccabucci:
+    brand_id: "baccabucci"
+    name: "Bacca Bucci"
+    domain: "baccabucci.com"
+    source_type: "shopify_storefront"
+    endpoint: "https://baccabucci.com/products.json"
+    batch_size: 250
+    is_active: true
+    expected_currency: "INR"
+
+  elevarsports:
+    brand_id: "elevarsports"
+    name: "Elevar Sports"
+    domain: "elevarsports.com"
+    source_type: "shopify_storefront"
+    endpoint: "https://elevarsports.com/products.json"
+    batch_size: 250
+    is_active: true
+    expected_currency: "INR"
+
+  plaeto:
+    brand_id: "plaeto"
+    name: "Plaeto"
+    domain: "plaeto.in"
+    source_type: "shopify_storefront"
+    endpoint: "https://plaeto.in/products.json"
+    batch_size: 250
+    is_active: true
+    expected_currency: "INR"
+
+external_sources:
+  tranco:
+    source_name: "tranco_api"
+    api_url: "https://tranco-list.eu/api/ranks/domain/{domain}"
+    frequency: "daily"
+    politeness_delay_seconds: 1.0
+    is_active: true
+
+  google_trends:
+    source_name: "google_trends_csv"
+    collection_mode: "manual_export_required"  # Programmatic requests encounter HTTP 429 rate limit
+    geography: "IN"
+    timeframe: "today 12-m"
+    cohort_terms:
+      - "Neemans"
+      - "Bacca Bucci"
+      - "Elevar Sports"
+      - "Plaeto"
+    expected_csv_dir: "data/raw/search"
+    metadata_manifest_name: "search_metadata.json"
+    is_active: true
+
+quality_thresholds:
+  max_acceptable_duplicate_ratio: 0.0
+  max_acceptable_missing_price_ratio: 0.0
+  product_count_drift_alert_pct: 25.0
