@@ -1,0 +1,25 @@
+{
+  "source": "Google Trends",
+  "geography": "India",
+  "geography_code": "IN",
+  "search_type": "Web Search",
+  "category": "All categories",
+  "time_range": "Past 12 months",
+  "time_range_code": "today 12-m",
+  "exact_search_terms": [
+    "Neeman's",
+    "Bacca Bucci",
+    "Elevar Sports",
+    "Plaeto"
+  ],
+  "export_date": "2026-09-29",
+  "collection_date": "2026-09-29",
+  "source_url": "https://trends.google.com/trends/explore?date=today%2012-m&geo=IN&q=Neeman%27s,Bacca%20Bucci,Elevar%20Sports,Plaeto",
+  "original_filename": "google_trends_india_12m.csv",
+  "data_frequency": "weekly",
+  "metric_definitions": {
+    "relative_search_interest": "Google Trends normalized search popularity index (0-100) relative to the cohort peak week and term. Not absolute search volume.",
+    "cohort_relative_search_share": "Proportion (%) of total cohort relative search interest for the same period. Defined only within the closed four-brand cohort; not total footwear market share.",
+    "is_low_volume": "True when Google Trends reported '<1', denoting detectable sub-unit interest (0 < interest < 1) below 1% of peak interest."
+  }
+}

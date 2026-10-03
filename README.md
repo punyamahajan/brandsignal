@@ -84,3 +84,27 @@ Statistical analysis
 Business intelligence
       ↓
 Human decision
+```
+
+---
+
+## Running BrandSignal
+
+### 1. Start the FastAPI Intelligence Backend
+```bash
+uvicorn backend.main:app --port 8000 --reload
+```
+Interactive API documentation is available at `http://localhost:8000/docs`.
+
+### 2. Start the React / Vite Frontend
+```bash
+cd frontend
+npm run dev
+```
+Open `http://localhost:5173` in your browser.
+
+### 3. Run the Automated Test Suite
+```bash
+pytest -v
+```
+All 113 tests validate DuckDB data integrity, analytics feature calculations, and FastAPI endpoints.

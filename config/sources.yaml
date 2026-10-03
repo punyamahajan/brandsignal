@@ -73,7 +73,7 @@ external_sources:
     geography: "IN"
     timeframe: "today 12-m"
     cohort_terms:
-      - "Neemans"
+      - "Neeman's"
       - "Bacca Bucci"
       - "Elevar Sports"
       - "Plaeto"

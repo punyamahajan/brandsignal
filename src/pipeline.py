@@ -9,7 +9,7 @@ from src.ingestion.storefront import StorefrontIngestor
 from src.ingestion.tranco import TrancoIngestor
 from src.ingestion.search import GoogleTrendsIngestor
 from src.cleaning.storefront_cleaner import StorefrontCleaner
-from src.cleaning.quality_checker import CatalogQualityChecker
+from src.cleaning.quality_checker import CatalogQualityChecker, SearchDemandQualityChecker
 
 class BrandSignalPipeline:
     """Master orchestrator for BrandSignal V1 data ingestion, validation, and storage."""
@@ -53,6 +53,7 @@ class BrandSignalPipeline:
         self.quality_checker = CatalogQualityChecker(
             drift_threshold_pct=self.cfg["quality_thresholds"]["product_count_drift_alert_pct"]
         )
+        self.search_quality_checker = SearchDemandQualityChecker()
 
     def initialize_environment(self) -> None:
         """Sets up directories, DuckDB DDL schemas, and seeds dim_brand."""
@@ -197,7 +198,7 @@ class BrandSignalPipeline:
 
         cohort_terms = self.cfg["external_sources"]["google_trends"]["cohort_terms"]
         brand_term_mapping = {
-            "neemans": "Neemans",
+            "neemans": "Neeman's",
             "baccabucci": "Bacca Bucci",
             "elevarsports": "Elevar Sports",
             "plaeto": "Plaeto"
@@ -208,6 +209,21 @@ class BrandSignalPipeline:
             brand_term_mapping=brand_term_mapping,
             geography=self.cfg["geography"]
         )
+
+        df_search = pd.DataFrame(records) if records else pd.DataFrame()
+        records_passed = 0
+        records_rejected = 0
+
+        if status == "SUCCESS" and not df_search.empty:
+            quality_report = self.search_quality_checker.check_search_demand(df_search)
+            if not quality_report.is_valid:
+                status = "FAILED"
+                msg = f"Search demand data quality checks failed: {'; '.join(quality_report.errors)}"
+                records_rejected = len(df_search)
+            else:
+                records_passed = len(df_search)
+                self.db.upsert_search_demand(df_search)
+
         t_end = datetime.now(timezone.utc)
 
         audit_entry = self.audit_logger.log_run(
@@ -217,22 +233,79 @@ class BrandSignalPipeline:
             brand_id=None,
             http_status=None,
             records_extracted=len(records),
-            records_passed=len(records),
-            records_rejected=0,
+            records_passed=records_passed,
+            records_rejected=records_rejected,
             execution_status=status,
             error_message=msg if status != "SUCCESS" else None
         )
         self.db.insert_audit_log(audit_entry)
 
-        if records:
-            df_search = pd.DataFrame(records)
-            self.db.upsert_search_demand(df_search)
-
         return {
             "status": status,
-            "records_loaded": len(records),
+            "records_loaded": records_passed,
             "raw_file_ref": raw_ref,
             "message": msg
+        }
+
+    def build_analytical_features(self, snapshot_date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Builds the analytical feature layer (fact_brand_snapshot_features and fact_brand_category_mix)
+        from processed catalog snapshots, domain popularity, and search demand observations.
+        """
+        from src.features.feature_pipeline import AnalyticalFeatureBuilder
+        t_start = datetime.now(timezone.utc)
+
+        # 1. Fetch catalog data
+        query = "SELECT * FROM fact_catalog_snapshot"
+        if snapshot_date:
+            query += f" WHERE snapshot_date = '{snapshot_date}'"
+        df_catalog = self.db.conn.execute(query).fetchdf()
+
+        # 2. Fetch Tranco and Search data
+        df_tranco = self.db.conn.execute("SELECT * FROM fact_domain_popularity").fetchdf()
+        df_search = self.db.conn.execute("SELECT * FROM fact_search_demand").fetchdf()
+
+        # Brand names mapping
+        brand_names = {cfg["brand_id"]: cfg["name"] for cfg in self.cfg["brands"].values()}
+
+        # 3. Build features
+        df_features, df_category_mix = AnalyticalFeatureBuilder.build_snapshot_features(
+            df_catalog=df_catalog,
+            df_tranco=df_tranco,
+            df_search=df_search,
+            brand_names=brand_names
+        )
+
+        features_loaded = 0
+        cat_mix_loaded = 0
+
+        if not df_features.empty:
+            features_loaded = self.db.upsert_brand_snapshot_features(df_features)
+
+        if not df_category_mix.empty:
+            cat_mix_loaded = self.db.upsert_brand_category_mix(df_category_mix)
+
+        t_end = datetime.now(timezone.utc)
+
+        audit_entry = self.audit_logger.log_run(
+            job_start_time=t_start,
+            job_end_time=t_end,
+            source_name="analytical_feature_layer",
+            brand_id=None,
+            http_status=None,
+            records_extracted=len(df_catalog),
+            records_passed=features_loaded,
+            records_rejected=0,
+            execution_status="SUCCESS" if features_loaded > 0 else "WARNING",
+            error_message=None if features_loaded > 0 else "No catalog snapshots available to build features"
+        )
+        self.db.insert_audit_log(audit_entry)
+
+        return {
+            "status": "SUCCESS" if features_loaded > 0 else "WARNING",
+            "feature_records_loaded": features_loaded,
+            "category_mix_records_loaded": cat_mix_loaded,
+            "snapshot_dates": sorted(df_features["snapshot_date"].unique().tolist()) if not df_features.empty else []
         }
 
     def export_processed_snapshots(self) -> None:
@@ -242,7 +315,10 @@ class BrandSignalPipeline:
         self.db.export_to_parquet("fact_catalog_snapshot", os.path.join(parquet_dir, "fact_catalog_snapshot.parquet"))
         self.db.export_to_parquet("fact_domain_popularity", os.path.join(parquet_dir, "fact_domain_popularity.parquet"))
         self.db.export_to_parquet("fact_search_demand", os.path.join(parquet_dir, "fact_search_demand.parquet"))
+        self.db.export_to_parquet("fact_brand_snapshot_features", os.path.join(parquet_dir, "fact_brand_snapshot_features.parquet"))
+        self.db.export_to_parquet("fact_brand_category_mix", os.path.join(parquet_dir, "fact_brand_category_mix.parquet"))
         self.db.export_to_parquet("audit_ingestion_log", os.path.join(parquet_dir, "audit_ingestion_log.parquet"))
 
     def close(self) -> None:
         self.db.close()
+
